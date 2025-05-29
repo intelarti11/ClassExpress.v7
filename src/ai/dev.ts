@@ -1,4 +1,1 @@
-import { config } from 'dotenv';
-config();
-
-import '@/ai/flows/suggest-style-options.ts';
+// Flows will be imported for their side effects in this file.
