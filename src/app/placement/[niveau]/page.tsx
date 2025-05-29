@@ -378,23 +378,16 @@ function StudentCardDnd({
         const partner = allStudentsForConstraints.find(
           s => normalizeString(s.NOM) === npmaNomNorm && normalizeString(s.PRENOM) === npmaPrenomNorm
         );
-        if (partner) {
+        if (partner) { // If NPMA partner exists, we always show the icon and provide info
           const studentInSameClassAsPartner = student.FUTURE_CLASSE && student.FUTURE_CLASSE === partner.FUTURE_CLASSE && student.FUTURE_CLASSE.trim() !== "";
-          if (studentInSameClassAsPartner) { // NPMA Conflict: Both in same class
+          if (studentInSameClassAsPartner) {
             npmaInfo = {
-              message: `NPMA : Ne pas mettre avec ${partner.PRENOM} ${partner.NOM} (conflit dans ${student.FUTURE_CLASSE})`,
+              message: `NPMA Violation: ${student.PRENOM} ${student.NOM} est avec ${partner.PRENOM} ${partner.NOM} dans la classe ${student.FUTURE_CLASSE}.`,
             };
-          } else if (!student.FUTURE_CLASSE && partner.FUTURE_CLASSE ) { // Current student unassigned, partner is placed
-             npmaInfo = {
-               message: `NPMA : Ne pas mettre avec ${partner.PRENOM} ${partner.NOM} (partenaire en ${partner.FUTURE_CLASSE})`,
-             };
-          } else if (student.FUTURE_CLASSE && !partner.FUTURE_CLASSE) { // Current student placed, partner unassigned
+          } else {
+            let partnerStatus = partner.FUTURE_CLASSE ? `est en ${partner.FUTURE_CLASSE}` : `est non positionné(e)`;
             npmaInfo = {
-              message: `NPMA : Ne pas mettre avec ${partner.PRENOM} ${partner.NOM} (partenaire non positionné(e))`,
-            };
-          } else if (!student.FUTURE_CLASSE && !partner.FUTURE_CLASSE) { // Both unassigned
-            npmaInfo = {
-              message: `NPMA : Ne pas mettre avec ${partner.PRENOM} ${partner.NOM} (partenaire non positionné(e))`,
+              message: `NPMA Consigne: ${student.PRENOM} ${student.NOM} ne pas mettre avec ${partner.PRENOM} ${partner.NOM}. (Partenaire ${partnerStatus}).`,
             };
           }
         }
@@ -407,12 +400,26 @@ function StudentCardDnd({
         const partner = allStudentsForConstraints.find(
           s => normalizeString(s.NOM) === amaNomNorm && normalizeString(s.PRENOM) === amaPrenomNorm
         );
-        if (partner) {
-          const studentNotInSameClassAsPartner = student.FUTURE_CLASSE !== partner.FUTURE_CLASSE;
-          if (studentNotInSameClassAsPartner) { // AMA Constraint not met
+        if (partner) { // If AMA partner exists, we always show the icon and provide info
+          const studentInSameClassAsPartner = student.FUTURE_CLASSE && student.FUTURE_CLASSE === partner.FUTURE_CLASSE && student.FUTURE_CLASSE.trim() !== "";
+          if (studentInSameClassAsPartner) {
             amaInfo = {
-              message: `AMA : Assigner avec ${partner.PRENOM} ${partner.NOM} (partenaire en ${partner.FUTURE_CLASSE || 'non positionné(e)'})`,
+              message: `AMA Consigne Respectée: ${student.PRENOM} ${student.NOM} est avec ${partner.PRENOM} ${partner.NOM} dans la classe ${student.FUTURE_CLASSE}.`,
             };
+          } else {
+            let partnerStatus = partner.FUTURE_CLASSE ? `est en ${partner.FUTURE_CLASSE}` : `est non positionné(e)`;
+            let studentStatus = student.FUTURE_CLASSE ? `est en ${student.FUTURE_CLASSE}`: `est non positionné(e)`;
+            
+            // If both are unassigned, they are technically not in the same *specific* future class yet.
+            if (!student.FUTURE_CLASSE && !partner.FUTURE_CLASSE) {
+               amaInfo = {
+                  message: `AMA Consigne: ${student.PRENOM} ${student.NOM} à mettre avec ${partner.PRENOM} ${partner.NOM}. (Les deux sont non positionnés).`
+               };
+            } else {
+              amaInfo = {
+                message: `AMA Violation: ${student.PRENOM} ${student.NOM} (${studentStatus}) doit être avec ${partner.PRENOM} ${partner.NOM}. (Partenaire ${partnerStatus}).`,
+              };
+            }
           }
         }
       }
