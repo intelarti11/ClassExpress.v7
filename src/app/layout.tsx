@@ -1,5 +1,5 @@
 import type {Metadata} from 'next';
-import { Geist, Geist_Mono } from 'next/font/google';
+import {Geist, Geist_Mono} from 'next/font/google';
 import './globals.css';
 import { Toaster } from "@/components/ui/toaster";
 
@@ -14,8 +14,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'Blanc Canvas',
-  description: 'A minimalist white canvas application.',
+  title: 'ClassExpress',
+  description: 'Application pour la gestion du placement des élèves en classes à partir de fichiers CSV.',
 };
 
 export default function RootLayout({
@@ -24,11 +24,9 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased h-full flex flex-col`}>
-        <main className="flex-grow">
-          {children}
-        </main>
+    <html lang="en">
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        {children}
         <Toaster />
       </body>
     </html>
