@@ -854,7 +854,7 @@ function calculateClassScoreAndDetails(
 
 export default function PlacementPage({ params: paramsProp }: PlacementPageProps) {
   const { toast } = useToast();
-  const { niveau } = React.use(paramsProp);
+  const { niveau } = React.use(paramsProp); // Corrected: Use React.use() for params
   const targetLevelDisplay = useMemo(() => niveau.toUpperCase().replace(/-/g, ' '), [niveau]);
 
   const [allStudents, setAllStudents] = useState<Student[]>([]);
@@ -1198,10 +1198,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
 
   useEffect(() => {
     if (!isLoading && !error) {
-        // Filter out core rules if they are identical to the default ones before saving,
-        // to keep localStorage cleaner and rely on the loading logic to always add them.
-        // However, for simplicity and to ensure user modifications to core rule messages are saved,
-        // we save all current rules. The loading logic will handle ensuring they are present.
         localStorage.setItem(`placementRules_${targetLevelDisplay}`, JSON.stringify(placementRules));
     }
   }, [placementRules, targetLevelDisplay, isLoading, error]);
@@ -1964,9 +1960,8 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
   };
 
   const MAX_STUDENTS_PER_CLASS = 30;
-  const ADDITIONAL_GENDER_DIFFERENCE_MARGIN = 1; // Margin for gender balance hard constraint
+  const ADDITIONAL_GENDER_DIFFERENCE_MARGIN = 1; 
 
-  // Helper function for automatic placement: Checks hard constraints
   const violatesHardConstraints = (
     student: Student,
     candidateClass: FutureClassShell,
@@ -1979,7 +1974,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
       return true;
     }
 
-    // Gender balance absolute difference hard constraint
     let projectedBoys = studentsInCandidateClass.filter(s => s.SEXE === "MASCULIN").length;
     let projectedGirls = studentsInCandidateClass.filter(s => s.SEXE === "FÉMININ" || s.SEXE === "FEMININ").length;
 
@@ -1988,7 +1982,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     } else if (student.SEXE === "FÉMININ" || student.SEXE === "FEMININ") {
       projectedGirls++;
     }
-    // Only apply gender diff constraint if sex is specified for the student being placed
     if (student.SEXE && (student.SEXE === "MASCULIN" || student.SEXE === "FÉMININ" || student.SEXE === "FEMININ")) {
         const absoluteGenderDifference = Math.abs(projectedBoys - projectedGirls);
         if (absoluteGenderDifference > maxAllowedAbsoluteGenderDifference) {
@@ -2074,19 +2067,17 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     return false;
   };
 
-  // Helper function for automatic placement: Calculates score for a class
   const calculatePlacementScore = (
     student: Student,
     candidateClass: FutureClassShell,
     studentsInCandidateClass: Student[],
     allRules: PlacementRule[],
-    entireStudentPopulation: Student[], // All students in the current placement context (e.g. allStudents for the level)
+    entireStudentPopulation: Student[], 
     globalBoyRatio: number,
     globalGirlRatio: number
   ): number => {
     let score = 0;
 
-    // AMA (Assign Together)
     if (student.AMA_NOM && student.AMA_PRENOM) {
       const amaNomNorm = normalizeString(student.AMA_NOM);
       const amaPrenomNorm = normalizeString(student.AMA_PRENOM);
@@ -2105,10 +2096,8 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
       }
     }
 
-    // Class Size (Favor less full classes)
-    score -= studentsInCandidateClass.length * 2; // Penalty for larger classes
+    score -= studentsInCandidateClass.length * 2; 
 
-    // Proportional Gender Balance (Soft constraint)
     const projectedClassSize = studentsInCandidateClass.length + 1;
 
     let currentBoysInClass = studentsInCandidateClass.filter(s => s.SEXE === "MASCULIN").length;
@@ -2123,23 +2112,20 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
       projectedGirlsAfterAdd++;
     }
 
-    // Only apply gender balance scoring if the student has a specified gender and there's a defined global ratio
     if (student.SEXE && (student.SEXE === "MASCULIN" || student.SEXE === "FÉMININ" || student.SEXE === "FEMININ") && (globalBoyRatio > 0 || globalGirlRatio > 0) && projectedClassSize > 0) {
         const projectedBoyRatioInClass = projectedBoysAfterAdd / projectedClassSize;
         const projectedGirlRatioInClass = projectedGirlsAfterAdd / projectedClassSize;
 
         const boyDeviation = Math.abs(projectedBoyRatioInClass - globalBoyRatio);
         const girlDeviation = Math.abs(projectedGirlRatioInClass - globalGirlRatio);
-        score -= (boyDeviation + girlDeviation) * 8.0; // Penalty for deviation from global ratio
+        score -= (boyDeviation + girlDeviation) * 8.0; 
     }
 
 
-    // Level Balance
     const studentLevel = student.NIVEAU?.toUpperCase() || "unspecified";
     const countOfStudentLevelInClass = studentsInCandidateClass.filter(s => (s.NIVEAU?.toUpperCase() || "unspecified") === studentLevel).length;
-    score -= (countOfStudentLevelInClass + 1) * 3; // Penalize adding to an already numerous level
+    score -= (countOfStudentLevelInClass + 1) * 3; 
 
-    // Vigilance Balance
     let numRougeInClass = studentsInCandidateClass.filter(s => s.CODE_VIGILANCE === "ROUGE").length;
     let numOrangeInClass = studentsInCandidateClass.filter(s => s.CODE_VIGILANCE === "ORANGE").length;
     if (student.CODE_VIGILANCE === "ROUGE") numRougeInClass++;
@@ -2147,7 +2133,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     score -= numRougeInClass * 10;
     score -= numOrangeInClass * 5;
 
-    // PAP Balance
     let numPapInClass = studentsInCandidateClass.filter(s => s.PAP && s.PAP.trim() !== "").length;
     if (student.PAP && student.PAP.trim() !== "") numPapInClass++;
     score -= numPapInClass * 4;
@@ -2163,7 +2148,7 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     const studentsToAssignInitial = allStudents.filter(
         (s) => s.CLASSE.toUpperCase().startsWith(sourceLevel) &&
                (!s.FUTURE_CLASSE || s.FUTURE_CLASSE.trim() === "") &&
-               (s.NIVEAU && s.NIVEAU.trim() !== "") // Exclude students without a specified level
+               (s.NIVEAU && s.NIVEAU.trim() !== "") 
     );
 
     const availableClasses = [...futureClasses];
@@ -2186,7 +2171,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
       classCounts.set(fc.name, workingStudentList.filter(s => s.FUTURE_CLASSE === fc.name).length);
     });
 
-    // Calculate global gender ratios for students being placed
     const totalBoysToAssign = studentsToAssignInitial.filter(s => s.SEXE === "MASCULIN").length;
     const totalGirlsToAssign = studentsToAssignInitial.filter(s => s.SEXE === "FÉMININ" || s.SEXE === "FEMININ").length;
     const totalStudentsWithGenderToAssign = totalBoysToAssign + totalGirlsToAssign;
@@ -2194,7 +2178,7 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     const globalBoyRatio = totalStudentsWithGenderToAssign > 0 ? totalBoysToAssign / totalStudentsWithGenderToAssign : 0.5;
     const globalGirlRatio = totalStudentsWithGenderToAssign > 0 ? totalGirlsToAssign / totalStudentsWithGenderToAssign : 0.5;
 
-    let calculatedMaxAllowedAbsoluteGenderDifference = 5; // Default fallback
+    let calculatedMaxAllowedAbsoluteGenderDifference = 5; 
     if (availableClasses.length > 0 && totalStudentsWithGenderToAssign > 0) {
         const globalGenderDifferenceUnsigned = Math.abs(totalBoysToAssign - totalGirlsToAssign);
         const naturalDifferencePerClass = Math.ceil(globalGenderDifferenceUnsigned / availableClasses.length);
@@ -2206,37 +2190,31 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     const studentsNotPlaced: Student[] = [];
 
     const studentsToAssign = [...studentsToAssignInitial].sort((a, b) => {
-        // Prioritize students with AMA partners first
         const aAmaPartnerKey = (a.AMA_NOM && a.AMA_PRENOM) ? `${normalizeString(a.AMA_NOM)}-${normalizeString(a.AMA_PRENOM)}` : null;
         const bAmaPartnerKey = (b.AMA_NOM && b.AMA_PRENOM) ? `${normalizeString(b.AMA_NOM)}-${normalizeString(b.AMA_PRENOM)}` : null;
 
-        // Find if partners are already in the working list (could be from previous iterations or manual placements)
         const aPartner = aAmaPartnerKey ? workingStudentList.find(s => `${normalizeString(s.NOM)}-${normalizeString(s.PRENOM)}` === aAmaPartnerKey) : null;
         const bPartner = bAmaPartnerKey ? workingStudentList.find(s => `${normalizeString(s.NOM)}-${normalizeString(s.PRENOM)}` === bAmaPartnerKey) : null;
 
         const aAmaPartnerPlaced = aPartner && aPartner.FUTURE_CLASSE && aPartner.FUTURE_CLASSE.trim() !== "";
         const bAmaPartnerPlaced = bPartner && bPartner.FUTURE_CLASSE && bPartner.FUTURE_CLASSE.trim() !== "";
 
-        // If one student's AMA partner is already placed, and the other's is not, prioritize the one whose partner is placed.
-        if (aAmaPartnerPlaced && !bAmaPartnerPlaced) return -1; // a comes first
-        if (!aAmaPartnerPlaced && bAmaPartnerPlaced) return 1;  // b comes first
+        if (aAmaPartnerPlaced && !bAmaPartnerPlaced) return -1; 
+        if (!aAmaPartnerPlaced && bAmaPartnerPlaced) return 1;  
 
-        // Then, prioritize by "difficulty" (e.g., "D" level students first)
         const niveauOrder: Record<string, number> = { D: 1, C: 2, B: 3, A: 4 };
-        const aNiveauSort = niveauOrder[a.NIVEAU?.toUpperCase() || ""] || 5; // Students with no level go last among these
+        const aNiveauSort = niveauOrder[a.NIVEAU?.toUpperCase() || ""] || 5; 
         const bNiveauSort = niveauOrder[b.NIVEAU?.toUpperCase() || ""] || 5;
         if (aNiveauSort !== bNiveauSort) return aNiveauSort - bNiveauSort;
 
-        // Fallback to alphabetical if all else is equal
-        return 0; // Or any other consistent tie-breaker like name
+        return 0; 
     });
 
 
     for (const student of studentsToAssign) {
       const studentInWorkingListIndex = workingStudentList.findIndex(s => getStudentKey(s) === getStudentKey(student));
-      if (studentInWorkingListIndex === -1) continue; // Should not happen if studentsToAssign is derived from workingStudentList initially
+      if (studentInWorkingListIndex === -1) continue; 
 
-      // Skip if student already has a future class (e.g., placed manually or by AMA partner logic)
       if (workingStudentList[studentInWorkingListIndex].FUTURE_CLASSE && workingStudentList[studentInWorkingListIndex].FUTURE_CLASSE.trim() !== "") {
           continue;
       }
@@ -2246,7 +2224,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
       let highestScore = -Infinity;
       let placedInThisIteration = false;
 
-      // Introduce randomness in class selection order to avoid bias towards first classes in the list
       const shuffledClasses = [...availableClasses].sort(() => Math.random() - 0.5);
 
       for (const candidateClass of shuffledClasses) {
@@ -2254,7 +2231,7 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
         const studentsCurrentlyInThisCandidateClass = workingStudentList.filter(s => s.FUTURE_CLASSE === candidateClass.name);
 
         if (violatesHardConstraints(
-            workingStudentList[studentInWorkingListIndex], // Pass the actual student object from the up-to-date list
+            workingStudentList[studentInWorkingListIndex], 
             candidateClass,
             studentsCurrentlyInThisCandidateClass,
             placementRules,
@@ -2265,11 +2242,11 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
         }
 
         const score = calculatePlacementScore(
-            workingStudentList[studentInWorkingListIndex], // Pass the actual student object
+            workingStudentList[studentInWorkingListIndex], 
             candidateClass,
             studentsCurrentlyInThisCandidateClass,
             placementRules,
-            workingStudentList, // Entire population for context (e.g., finding AMA partners not yet placed)
+            workingStudentList, 
             globalBoyRatio,
             globalGirlRatio
         );
@@ -2286,32 +2263,29 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
         studentsPlacedCount++;
         placedInThisIteration = true;
 
-        // If this student has an AMA partner who is not yet placed, try to place the partner in the same class
         const amaNomNorm = normalizeString(student.AMA_NOM);
         const amaPrenomNorm = normalizeString(student.AMA_PRENOM);
         if (student.AMA_NOM && student.AMA_PRENOM) {
             const partnerIndex = workingStudentList.findIndex(s =>
                 normalizeString(s.NOM) === amaNomNorm &&
                 normalizeString(s.PRENOM) === amaPrenomNorm &&
-                (!s.FUTURE_CLASSE || s.FUTURE_CLASSE.trim() === "") // Partner is not yet placed
+                (!s.FUTURE_CLASSE || s.FUTURE_CLASSE.trim() === "") 
             );
             if (partnerIndex !== -1) {
                  const partner = workingStudentList[partnerIndex];
-                 const partnerCurrentClassCount = classCounts.get(bestCandidateClass.name) || 0; // Count before adding partner
-                 const studentsInPartnersCandidateClass = workingStudentList.filter(s => s.FUTURE_CLASSE === bestCandidateClass!.name); // Students already in this class
+                 const partnerCurrentClassCount = classCounts.get(bestCandidateClass.name) || 0; 
+                 const studentsInPartnersCandidateClass = workingStudentList.filter(s => s.FUTURE_CLASSE === bestCandidateClass!.name); 
 
-                 // Check if partner can be placed in the same class without violating hard constraints for the PARTNER
                  if (!violatesHardConstraints(
                     partner,
                     bestCandidateClass,
-                    studentsInPartnersCandidateClass, // Students already in class (excluding the current student if they were just added, effectively)
+                    studentsInPartnersCandidateClass, 
                     placementRules,
-                    partnerCurrentClassCount, // The count before potentially adding the partner
+                    partnerCurrentClassCount, 
                     calculatedMaxAllowedAbsoluteGenderDifference
                     )) {
                     workingStudentList[partnerIndex].FUTURE_CLASSE = bestCandidateClass.name;
                     classCounts.set(bestCandidateClass.name, (classCounts.get(bestCandidateClass.name) || 0) + 1);
-                    // studentsPlacedCount++; // Optionally count partner if not already counted in the main loop
                  }
             }
         }
@@ -2324,7 +2298,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
 
     setAllStudents(workingStudentList);
 
-    // Reorder students within each class after all placements
     for (const fc of availableClasses) {
       handleReorderStudentsInClass(fc.name);
     }
@@ -2377,7 +2350,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
       return;
     }
 
-    // Consider only students who are actually placed in one of the future classes for this level when calculating global ratios for the report
     const studentsInFutureClassesForThisLevel = allStudents.filter(s =>
       futureClasses.some(fc => fc.name === s.FUTURE_CLASSE)
     );
@@ -2391,19 +2363,19 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
 
     const newReportData = futureClasses.map(fc => {
       const studentsInThisClass = allStudents.filter(s => s.FUTURE_CLASSE === fc.name);
-      const violationForThisClass = classViolations[fc.id] || { hasViolation: false, messages: [] }; // Get pre-calculated violations
+      const violationForThisClass = classViolations[fc.id] || { hasViolation: false, messages: [] }; 
       return calculateClassScoreAndDetails(
         fc,
         studentsInThisClass,
-        allStudents, // Pass all students for AMA partner finding context within calculateClassScoreAndDetails
+        allStudents, 
         placementRules,
         reportGlobalBoyRatio,
         reportGlobalGirlRatio,
-        violationForThisClass // Pass the specific violations for this class
+        violationForThisClass 
       );
     });
 
-    newReportData.sort((a, b) => b.score - a.score); // Sort by score descending
+    newReportData.sort((a, b) => b.score - a.score); 
 
     setReportData(newReportData);
     setReportDialogOpen(true);
@@ -3187,7 +3159,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
                       <FormLabel>PAP</FormLabel>
                       <Select
                         onValueChange={field.onChange}
-                        // Ensure the value matches one of the SelectItem values
                         value={(field.value && field.value.trim() !== "") ? "PAP" : PAP_VALUE_NONE}
                       >
                         <FormControl>
@@ -3278,45 +3249,49 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
             </DialogDescription>
           </DialogHeader>
           <ScrollArea className="flex-1 pr-4">
-            <div className="space-y-4 py-2">
+            <div className="space-y-3 py-2">
               {reportData.length === 0 && <p className="text-muted-foreground text-center">Aucune donnée de rapport à afficher. Assurez-vous que des élèves sont placés.</p>}
               {reportData.map((classInfo) => (
-                <Card key={classInfo.classId} className={classInfo.violatedRuleMessages.length > 0 ? "border-destructive bg-destructive/5" : ""}>
-                  <CardHeader className="pb-3 pt-4">
-                    <CardTitle className="flex justify-between items-center text-lg">
-                      <span>{classInfo.className}</span>
-                      <Badge variant={classInfo.violatedRuleMessages.length > 0 ? "destructive" : "secondary"}>
-                        Score: {classInfo.score}
-                      </Badge>
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="text-sm space-y-1.5">
+                <div 
+                  key={classInfo.classId} 
+                  className={cn(
+                    "py-3 px-2 border-b", 
+                    classInfo.violatedRuleMessages.length > 0 ? "border-l-4 border-l-destructive bg-destructive/5 pl-3" : "pl-2"
+                  )}
+                >
+                  <div className="flex justify-between items-start mb-1.5">
+                    <h4 className="text-md font-semibold text-primary">{classInfo.className}</h4>
+                    <Badge variant={classInfo.violatedRuleMessages.length > 0 ? "destructive" : "secondary"} className="text-xs">
+                      Score: {classInfo.score}
+                    </Badge>
+                  </div>
+                  <div className="text-xs space-y-0.5 text-muted-foreground">
                     <p><strong>Effectif :</strong> {classInfo.studentCount} (G: {classInfo.boysCount}, F: {classInfo.girlsCount}, N/S: {classInfo.unspecifiedSexCount})</p>
                     <p>
                       <strong>Niveaux :</strong>
-                      A: <span className="font-semibold text-green-700">{classInfo.niveaux.A}</span>, {' '}
-                      B: <span className="font-semibold text-green-500">{classInfo.niveaux.B}</span>, {' '}
-                      C: <span className="font-semibold text-yellow-500">{classInfo.niveaux.C}</span>, {' '}
-                      D: <span className="font-semibold text-red-500">{classInfo.niveaux.D}</span>, {' '}
-                      Non Spéc.: <span className="font-semibold">{classInfo.niveaux.unspecified}</span>
+                      A: <span className="font-medium text-green-700">{classInfo.niveaux.A}</span>,{' '}
+                      B: <span className="font-medium text-green-500">{classInfo.niveaux.B}</span>,{' '}
+                      C: <span className="font-medium text-yellow-500">{classInfo.niveaux.C}</span>,{' '}
+                      D: <span className="font-medium text-red-500">{classInfo.niveaux.D}</span>,{' '}
+                      Non Spéc.: <span className="font-medium">{classInfo.niveaux.unspecified}</span>
                     </p>
                     <p>
                       <strong>Vigilance :</strong>
-                      Rouge: <span className="font-semibold text-red-600">{classInfo.vigilance.ROUGE}</span>, {' '}
-                      Orange: <span className="font-semibold text-orange-500">{classInfo.vigilance.ORANGE}</span>, {' '}
-                      Non Spéc.: <span className="font-semibold">{classInfo.vigilance.unspecified}</span>
+                      Rouge: <span className="font-medium text-red-600">{classInfo.vigilance.ROUGE}</span>,{' '}
+                      Orange: <span className="font-medium text-orange-500">{classInfo.vigilance.ORANGE}</span>,{' '}
+                      Non Spéc.: <span className="font-medium">{classInfo.vigilance.unspecified}</span>
                     </p>
-                    <p><strong>PAP :</strong> <span className="font-semibold text-yellow-600">{classInfo.papCount}</span></p>
+                    <p><strong>PAP :</strong> <span className="font-medium text-yellow-600">{classInfo.papCount}</span></p>
+                  </div>
                     {classInfo.violatedRuleMessages.length > 0 && (
-                      <div className="pt-1">
-                        <strong className="text-destructive">Violations de règles ({classInfo.violatedRuleMessages.length}) :</strong>
-                        <ul className="list-disc list-inside text-destructive pl-4 text-xs">
+                      <div className="mt-2 pt-1 border-t border-destructive/20">
+                        <strong className="text-destructive text-xs">Violations ({classInfo.violatedRuleMessages.length}) :</strong>
+                        <ul className="list-disc list-inside text-destructive/90 pl-4 text-xs mt-0.5 space-y-px">
                           {classInfo.violatedRuleMessages.map((msg, idx) => <li key={idx}>{msg}</li>)}
                         </ul>
                       </div>
                     )}
-                  </CardContent>
-                </Card>
+                </div>
               ))}
             </div>
           </ScrollArea>
