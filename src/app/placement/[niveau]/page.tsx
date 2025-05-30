@@ -80,7 +80,6 @@ import {
   useSortable,
   arrayMove as dndArrayMove,
 } from '@dnd-kit/sortable';
-import {CSS} from '@dnd-kit/utilities';
 
 
 interface Student {
@@ -854,7 +853,7 @@ function calculateClassScoreAndDetails(
 
 export default function PlacementPage({ params }: PlacementPageProps) {
   const { toast } = useToast();
-  const { niveau } = params;
+  const { niveau } = React.use(params);
   const targetLevelDisplay = useMemo(() => niveau.toUpperCase().replace(/-/g, ' '), [niveau]);
 
   const [allStudents, setAllStudents] = useState<Student[]>([]);
@@ -3332,3 +3331,4 @@ export default function PlacementPage({ params }: PlacementPageProps) {
     </DndContext>
   );
 }
+
