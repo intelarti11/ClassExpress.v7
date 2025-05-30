@@ -754,6 +754,60 @@ type FilterState = {
 };
 
 
+// --- Nouvelle fonction utilitaire fairAutoPlaceStudents --- //
+function fairAutoPlaceStudents(
+  students: Student[],
+  classes: FutureClassShell[]
+): Record<string, Student[]> {
+  // Création d’un tableau vide pour chaque classe
+  const classMap: Record<string, Student[]> = {};
+  classes.forEach(cls => (classMap[cls.id] = []));
+
+  // Séparation garçons/filles
+  const boys = students.filter(s => s.SEXE === "MASCULIN");
+  const girls = students.filter(s => s.SEXE === "FÉMININ" || s.SEXE === "FEMININ");
+  const nbClasses = classes.length;
+
+  if (nbClasses === 0) return classMap; // Pas de classes, on ne peut rien faire
+
+  // Calcul du quota cible
+  const targetBoys = Math.floor(boys.length / nbClasses);
+  let extraBoys = boys.length % nbClasses;
+
+  const targetGirls = Math.floor(girls.length / nbClasses);
+  let extraGirls = girls.length % nbClasses;
+
+  // Remplir chaque classe en quotas
+  let boysIdx = 0, girlsIdx = 0;
+  classes.forEach((cls) => { // Removed unused 'i'
+    const boysThisClass = targetBoys + (extraBoys > 0 ? 1 : 0);
+    const girlsThisClass = targetGirls + (extraGirls > 0 ? 1 : 0);
+
+    classMap[cls.id] = [
+      ...boys.slice(boysIdx, boysIdx + boysThisClass),
+      ...girls.slice(girlsIdx, girlsIdx + girlsThisClass),
+    ];
+
+    boysIdx += boysThisClass;
+    girlsIdx += girlsThisClass;
+    if (extraBoys > 0) extraBoys--;
+    if (extraGirls > 0) extraGirls--;
+  });
+
+  // S'il reste des élèves (genre non précisé ou données manquantes)
+  const leftovers = students.filter(
+    s => s.SEXE !== "MASCULIN" && s.SEXE !== "FÉMININ" && s.SEXE !== "FEMININ"
+  );
+  let ci = 0;
+  leftovers.forEach(stu => {
+    classMap[classes[ci % nbClasses].id].push(stu);
+    ci++;
+  });
+
+  return classMap; // Renvoie les listes d'élèves par classe (clé = id classe)
+}
+
+
 export default function PlacementPage({ params: paramsProp }: PlacementPageProps) {
   const { toast } = useToast();
   const pageParams = React.use(paramsProp);
@@ -798,6 +852,10 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
   const [currentOverDroppableId, setCurrentOverDroppableId] = useState<UniqueIdentifier | null>(null);
 
   const { setNodeRef: setUnassignedDroppableRef } = useDroppable({ id: UNASSIGNED_CONTAINER_ID });
+
+  // --- Nouvel état pour le placement équitable --- //
+  const [autoPlacedStudents, setAutoPlacedStudents] = useState<Record<string, Student[]>>({});
+
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -1035,6 +1093,42 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     });
     return stats;
   }, [allStudents, futureClasses]);
+
+  // --- Nouvelle fonction de handler pour le placement équitable --- //
+  function handleFairAutoPlace() {
+    if (!allStudents || allStudents.length === 0 || !futureClasses || futureClasses.length === 0) {
+      toast({
+        title: "Placement Équitable",
+        description: "Pas assez de données (élèves ou classes) pour effectuer le placement.",
+        variant: "destructive"
+      });
+      return;
+    }
+    // Pour l'instant, nous utilisons allStudents et futureClasses directement.
+    // Il faudrait peut-être filtrer allStudents pour ne prendre que ceux du niveau source non placés.
+    const studentsForFairPlace = allStudents.filter(
+      (s) => s.CLASSE.toUpperCase().startsWith(sourceLevel) &&
+             (!s.FUTURE_CLASSE || s.FUTURE_CLASSE.trim() === "")
+    );
+
+    if (studentsForFairPlace.length === 0) {
+      toast({ title: "Placement Équitable", description: "Aucun élève à placer pour ce niveau source.", variant: "default" });
+      return;
+    }
+
+
+    const result = fairAutoPlaceStudents(studentsForFairPlace, futureClasses);
+    setAutoPlacedStudents(result);
+    toast({
+      title: "Placement Équitable (Prévisualisation)",
+      description: "Le résultat est affiché ci-dessous. Pour l'appliquer, une étape supplémentaire est nécessaire.",
+    });
+    // Optionnel: Mettre à jour l'état général `allStudents` pour rendre ce placement visible/direct.
+    // Cela nécessiterait de parcourir `result` et de mettre à jour `student.FUTURE_CLASSE`.
+    // Exemple (nécessite de faire correspondre classId à className) :
+    // const updatedStudents = allStudents.map(s => { ... });
+    // setAllStudents(updatedStudents);
+  }
 
 
   useEffect(() => {
@@ -2375,6 +2469,12 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
                 <Wand2 className="mr-1 h-3 w-3 sm:mr-1.5 sm:h-4 sm:w-4"/>
                 {isAutoPlacing ? "Répartition..." : "Répartir"}
             </Button>
+             {/* --- Nouveau bouton pour le placement équitable --- */}
+            <Button onClick={handleFairAutoPlace} variant="outline" size="sm" disabled={isAutoPlacing || allStudents.length === 0 || futureClasses.length === 0}>
+                <Users className="mr-1 h-3 w-3 sm:mr-1.5 sm:h-4 sm:w-4"/>
+                Placement Équitable
+            </Button>
+
 
             <Dialog open={isManageRulesDialogOpen} onOpenChange={setManageRulesDialogOpen}>
               <DialogTrigger asChild>
@@ -2977,6 +3077,36 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
         </Card>
       </div>
 
+       {/* --- Affichage pour débogage du placement équitable --- */}
+      {Object.keys(autoPlacedStudents).length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle>Résultat du Placement Automatique Équitable (Débogage)</CardTitle>
+            <CardDescription>Ceci est une prévisualisation. Pour l'appliquer, des modifications supplémentaires sont nécessaires.</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {Object.entries(autoPlacedStudents).map(([classId, studentsInClass]) => {
+              const classShell = futureClasses.find(fc => fc.id === classId);
+              return (
+                <div key={classId}>
+                  <h4 className="font-semibold text-md">Classe: {classShell ? classShell.name : classId} (ID: {classId})</h4>
+                  {studentsInClass.length > 0 ? (
+                    <ul className="list-disc pl-5 text-sm">
+                      {studentsInClass.map(s => (
+                        <li key={getStudentKey(s)}>{s.NOM} {s.PRENOM} ({s.SEXE || 'N/A'})</li>
+                      ))}
+                    </ul>
+                  ): (
+                    <p className="text-sm text-muted-foreground italic">Aucun élève assigné à cette classe par ce placement.</p>
+                  )}
+                </div>
+              );
+            })}
+          </CardContent>
+        </Card>
+      )}
+
+
       {/* Edit Student Dialog */}
       <Dialog open={isEditStudentDialogOpen} onOpenChange={setEditStudentDialogOpen}>
         <DialogContent className="sm:max-w-[425px] max-h-[80vh] flex flex-col top-[calc(50%_+_25px)]">
@@ -3125,4 +3255,3 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     </DndContext>
   );
 }
-
