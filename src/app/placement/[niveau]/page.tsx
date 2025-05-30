@@ -2057,13 +2057,14 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     
     const studentsToAssignInitial = allStudents.filter(
         (s) => s.CLASSE.toUpperCase().startsWith(sourceLevel) &&
-               (!s.FUTURE_CLASSE || s.FUTURE_CLASSE.trim() === "")
+               (!s.FUTURE_CLASSE || s.FUTURE_CLASSE.trim() === "") &&
+               (s.NIVEAU && s.NIVEAU.trim() !== "") // Exclude students without a level
     );
     
     const availableClasses = [...futureClasses];
 
     if (studentsToAssignInitial.length === 0) {
-      toast({ title: "Répartition", description: "Aucun élève à placer.", variant: "default" });
+      toast({ title: "Répartition", description: "Aucun élève (avec niveau) à placer.", variant: "default" });
       setIsAutoPlacing(false);
       return;
     }
