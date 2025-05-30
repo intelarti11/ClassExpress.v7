@@ -854,7 +854,7 @@ function calculateClassScoreAndDetails(
 
 export default function PlacementPage({ params: paramsProp }: PlacementPageProps) {
   const { toast } = useToast();
-  const { niveau } = React.use(paramsProp); // Corrected: Use React.use() for params
+  const { niveau } = React.use(paramsProp);
   const targetLevelDisplay = useMemo(() => niveau.toUpperCase().replace(/-/g, ' '), [niveau]);
 
   const [allStudents, setAllStudents] = useState<Student[]>([]);
@@ -3248,7 +3248,7 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
               Scores et détails des classes actuellement configurées. Un score plus élevé indique une meilleure adéquation théorique.
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 pr-4">
+          <ScrollArea className="flex-1 pr-4 min-h-0">
             <div className="space-y-3 py-2">
               {reportData.length === 0 && <p className="text-muted-foreground text-center">Aucune donnée de rapport à afficher. Assurez-vous que des élèves sont placés.</p>}
               {reportData.map((classInfo) => (
@@ -3256,7 +3256,7 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
                   key={classInfo.classId} 
                   className={cn(
                     "py-3 px-2 border-b", 
-                    classInfo.violatedRuleMessages.length > 0 ? "border-l-4 border-l-destructive bg-destructive/5 pl-3" : "pl-2"
+                    classInfo.violatedRuleMessages.length > 0 ? "border-l-4 border-l-destructive bg-destructive/5 pl-3" : "pl-2 border-border" 
                   )}
                 >
                   <div className="flex justify-between items-start mb-1.5">
