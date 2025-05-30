@@ -852,9 +852,9 @@ function calculateClassScoreAndDetails(
 }
 
 
-export default function PlacementPage({ params: paramsProp }: PlacementPageProps) {
+export default function PlacementPage({ params }: PlacementPageProps) {
   const { toast } = useToast();
-  const { niveau } = React.use(paramsProp);
+  const { niveau } = React.use(params);
   const targetLevelDisplay = useMemo(() => niveau.toUpperCase().replace(/-/g, ' '), [niveau]);
 
   const [allStudents, setAllStudents] = useState<Student[]>([]);
@@ -3241,60 +3241,120 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
 
       {/* Report Dialog */}
       <Dialog open={isReportDialogOpen} onOpenChange={setReportDialogOpen}>
-        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+        <DialogContent className="max-w-5xl max-h-[90vh] flex flex-col">
           <DialogHeader>
             <DialogTitle>Rapport de Placement pour {targetLevelDisplay}</DialogTitle>
             <DialogDescription>
-              Scores et détails des classes actuellement configurées. Un score plus élevé indique une meilleure adéquation théorique.
+              Scores et détails des classes (maximum 8 affichées). Un score plus élevé indique une meilleure adéquation théorique.
             </DialogDescription>
           </DialogHeader>
-          <ScrollArea className="flex-1 pr-4 min-h-0">
-            <div className="space-y-3 py-2">
-              {reportData.length === 0 && <p className="text-muted-foreground text-center">Aucune donnée de rapport à afficher. Assurez-vous que des élèves sont placés.</p>}
-              {reportData.map((classInfo) => (
-                <div 
-                  key={classInfo.classId} 
-                  className={cn(
-                    "py-3 px-2 border-b", 
-                    classInfo.violatedRuleMessages.length > 0 ? "border-l-4 border-l-destructive bg-destructive/5 pl-3" : "pl-2 border-border" 
-                  )}
-                >
-                  <div className="flex justify-between items-start mb-1.5">
-                    <h4 className="text-md font-semibold text-primary">{classInfo.className}</h4>
-                    <Badge variant={classInfo.violatedRuleMessages.length > 0 ? "destructive" : "secondary"} className="text-xs">
-                      Score: {classInfo.score}
-                    </Badge>
+          <div className="flex-1 overflow-y-auto py-2 pr-2 min-h-0">
+            {reportData.length === 0 ? (
+              <p className="text-muted-foreground text-center py-4">Aucune donnée de rapport à afficher. Assurez-vous que des élèves sont placés.</p>
+            ) : (
+              (() => {
+                const displayedReportData = reportData.slice(0, 8);
+                const leftColumnClasses = displayedReportData.slice(0, 4);
+                const rightColumnClasses = displayedReportData.slice(4, 8);
+
+                return (
+                  <div className="flex gap-x-6">
+                    <div className="w-1/2 space-y-3">
+                      {leftColumnClasses.map((classInfo) => (
+                        <div 
+                          key={`report-${classInfo.classId}-left`} 
+                          className={cn(
+                            "py-3 px-2 border-b", 
+                            classInfo.violatedRuleMessages.length > 0 ? "border-l-4 border-l-destructive bg-destructive/5 pl-3" : "pl-2 border-border" 
+                          )}
+                        >
+                          <div className="flex justify-between items-start mb-1.5">
+                            <h4 className="text-md font-semibold text-primary">{classInfo.className}</h4>
+                            <Badge variant={classInfo.violatedRuleMessages.length > 0 ? "destructive" : "secondary"} className="text-xs">
+                              Score: {classInfo.score}
+                            </Badge>
+                          </div>
+                          <div className="text-xs space-y-0.5 text-muted-foreground">
+                            <p><strong>Effectif :</strong> {classInfo.studentCount} (G: {classInfo.boysCount}, F: {classInfo.girlsCount}, N/S: {classInfo.unspecifiedSexCount})</p>
+                            <p>
+                              <strong>Niveaux :</strong>
+                              A: <span className="font-medium text-green-700">{classInfo.niveaux.A}</span>,{' '}
+                              B: <span className="font-medium text-green-500">{classInfo.niveaux.B}</span>,{' '}
+                              C: <span className="font-medium text-yellow-500">{classInfo.niveaux.C}</span>,{' '}
+                              D: <span className="font-medium text-red-500">{classInfo.niveaux.D}</span>,{' '}
+                              Non Spéc.: <span className="font-medium">{classInfo.niveaux.unspecified}</span>
+                            </p>
+                            <p>
+                              <strong>Vigilance :</strong>
+                              Rouge: <span className="font-medium text-red-600">{classInfo.vigilance.ROUGE}</span>,{' '}
+                              Orange: <span className="font-medium text-orange-500">{classInfo.vigilance.ORANGE}</span>,{' '}
+                              Non Spéc.: <span className="font-medium">{classInfo.vigilance.unspecified}</span>
+                            </p>
+                            <p><strong>PAP :</strong> <span className="font-medium text-yellow-600">{classInfo.papCount}</span></p>
+                          </div>
+                            {classInfo.violatedRuleMessages.length > 0 && (
+                              <div className="mt-2 pt-1 border-t border-destructive/20">
+                                <strong className="text-destructive text-xs">Violations ({classInfo.violatedRuleMessages.length}) :</strong>
+                                <ul className="list-disc list-inside text-destructive/90 pl-4 text-xs mt-0.5 space-y-px">
+                                  {classInfo.violatedRuleMessages.map((msg, idx) => <li key={idx}>{msg}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="w-1/2 space-y-3">
+                      {rightColumnClasses.map((classInfo) => (
+                         <div 
+                          key={`report-${classInfo.classId}-right`} 
+                          className={cn(
+                            "py-3 px-2 border-b", 
+                            classInfo.violatedRuleMessages.length > 0 ? "border-l-4 border-l-destructive bg-destructive/5 pl-3" : "pl-2 border-border" 
+                          )}
+                        >
+                          <div className="flex justify-between items-start mb-1.5">
+                            <h4 className="text-md font-semibold text-primary">{classInfo.className}</h4>
+                            <Badge variant={classInfo.violatedRuleMessages.length > 0 ? "destructive" : "secondary"} className="text-xs">
+                              Score: {classInfo.score}
+                            </Badge>
+                          </div>
+                          <div className="text-xs space-y-0.5 text-muted-foreground">
+                            <p><strong>Effectif :</strong> {classInfo.studentCount} (G: {classInfo.boysCount}, F: {classInfo.girlsCount}, N/S: {classInfo.unspecifiedSexCount})</p>
+                            <p>
+                              <strong>Niveaux :</strong>
+                              A: <span className="font-medium text-green-700">{classInfo.niveaux.A}</span>,{' '}
+                              B: <span className="font-medium text-green-500">{classInfo.niveaux.B}</span>,{' '}
+                              C: <span className="font-medium text-yellow-500">{classInfo.niveaux.C}</span>,{' '}
+                              D: <span className="font-medium text-red-500">{classInfo.niveaux.D}</span>,{' '}
+                              Non Spéc.: <span className="font-medium">{classInfo.niveaux.unspecified}</span>
+                            </p>
+                            <p>
+                              <strong>Vigilance :</strong>
+                              Rouge: <span className="font-medium text-red-600">{classInfo.vigilance.ROUGE}</span>,{' '}
+                              Orange: <span className="font-medium text-orange-500">{classInfo.vigilance.ORANGE}</span>,{' '}
+                              Non Spéc.: <span className="font-medium">{classInfo.vigilance.unspecified}</span>
+                            </p>
+                            <p><strong>PAP :</strong> <span className="font-medium text-yellow-600">{classInfo.papCount}</span></p>
+                          </div>
+                            {classInfo.violatedRuleMessages.length > 0 && (
+                              <div className="mt-2 pt-1 border-t border-destructive/20">
+                                <strong className="text-destructive text-xs">Violations ({classInfo.violatedRuleMessages.length}) :</strong>
+                                <ul className="list-disc list-inside text-destructive/90 pl-4 text-xs mt-0.5 space-y-px">
+                                  {classInfo.violatedRuleMessages.map((msg, idx) => <li key={idx}>{msg}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                        </div>
+                      ))}
+                       {rightColumnClasses.length === 0 && leftColumnClasses.length > 0 && displayedReportData.length <=4 && (
+                         <p className="text-muted-foreground italic text-center py-4">Moins de 5 classes à afficher.</p>
+                       )}
+                    </div>
                   </div>
-                  <div className="text-xs space-y-0.5 text-muted-foreground">
-                    <p><strong>Effectif :</strong> {classInfo.studentCount} (G: {classInfo.boysCount}, F: {classInfo.girlsCount}, N/S: {classInfo.unspecifiedSexCount})</p>
-                    <p>
-                      <strong>Niveaux :</strong>
-                      A: <span className="font-medium text-green-700">{classInfo.niveaux.A}</span>,{' '}
-                      B: <span className="font-medium text-green-500">{classInfo.niveaux.B}</span>,{' '}
-                      C: <span className="font-medium text-yellow-500">{classInfo.niveaux.C}</span>,{' '}
-                      D: <span className="font-medium text-red-500">{classInfo.niveaux.D}</span>,{' '}
-                      Non Spéc.: <span className="font-medium">{classInfo.niveaux.unspecified}</span>
-                    </p>
-                    <p>
-                      <strong>Vigilance :</strong>
-                      Rouge: <span className="font-medium text-red-600">{classInfo.vigilance.ROUGE}</span>,{' '}
-                      Orange: <span className="font-medium text-orange-500">{classInfo.vigilance.ORANGE}</span>,{' '}
-                      Non Spéc.: <span className="font-medium">{classInfo.vigilance.unspecified}</span>
-                    </p>
-                    <p><strong>PAP :</strong> <span className="font-medium text-yellow-600">{classInfo.papCount}</span></p>
-                  </div>
-                    {classInfo.violatedRuleMessages.length > 0 && (
-                      <div className="mt-2 pt-1 border-t border-destructive/20">
-                        <strong className="text-destructive text-xs">Violations ({classInfo.violatedRuleMessages.length}) :</strong>
-                        <ul className="list-disc list-inside text-destructive/90 pl-4 text-xs mt-0.5 space-y-px">
-                          {classInfo.violatedRuleMessages.map((msg, idx) => <li key={idx}>{msg}</li>)}
-                        </ul>
-                      </div>
-                    )}
-                </div>
-              ))}
-            </div>
-          </ScrollArea>
+                )
+              })()
+            )}
+          </div>
           <DialogFooter className="border-t pt-4">
             <Button variant="outline" onClick={() => setReportDialogOpen(false)}>Fermer</Button>
           </DialogFooter>
