@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import Link from "next/link";
-import { ArrowLeft, User, Users, PlusCircle, GripVertical, Download, Search as SearchIcon, UserPlus, CalendarIcon, Pencil, InfoIcon, AlertTriangle, RotateCcw, Trash2, Settings2, Repeat, X as XIcon, Link2Off, Link2, StickyNote, Wand2, ListRestart } from "lucide-react";
+import { ArrowLeft, User, Users, PlusCircle, GripVertical, Download, Search as SearchIcon, UserPlus, CalendarIcon, Pencil, InfoIcon, AlertTriangle, RotateCcw, Trash2, Settings2, Repeat, X as XIcon, Link2Off, Link2, StickyNote, Wand2, ListRestart, ScrollText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { Textarea } from "@/components/ui/textarea";
@@ -409,7 +409,7 @@ function StudentCardDnd({
           } else {
             let partnerStatus = partner.FUTURE_CLASSE ? `est en ${partner.FUTURE_CLASSE}` : `est non positionné(e)`;
             let studentStatus = student.FUTURE_CLASSE ? `est en ${student.FUTURE_CLASSE}`: `est non positionné(e)`;
-            
+
             // If both are unassigned, they are technically not in the same *specific* future class yet.
             if (!student.FUTURE_CLASSE && !partner.FUTURE_CLASSE) {
                amaInfo = {
@@ -753,11 +753,108 @@ type FilterState = {
   vigilance: 'ROUGE' | 'ORANGE' | null;
 };
 
+interface ClassReportInfo {
+  className: string;
+  classId: string;
+  score: number;
+  studentCount: number;
+  boysCount: number;
+  girlsCount: number;
+  unspecifiedSexCount: number;
+  niveaux: { A: number; B: number; C: number; D: number; unspecified: number };
+  vigilance: { ROUGE: number; ORANGE: number; unspecified: number };
+  papCount: number;
+  violatedRuleMessages: string[];
+}
 
-export default function PlacementPage({ params: paramsProp }: PlacementPageProps) {
+function calculateClassScoreAndDetails(
+  classShell: FutureClassShell,
+  studentsInClass: Student[],
+  allStudentsInContext: Student[], // All students in the current level (source for global ratios)
+  allRules: PlacementRule[],
+  globalBoyRatio: number,
+  globalGirlRatio: number,
+  classViolationsForThisClass: ClassViolation // Pass pre-calculated violations
+): ClassReportInfo {
+  let score = 0;
+
+  const reportDetails: Omit<ClassReportInfo, 'className' | 'classId' | 'score'> = {
+    studentCount: studentsInClass.length,
+    boysCount: studentsInClass.filter(s => s.SEXE === "MASCULIN").length,
+    girlsCount: studentsInClass.filter(s => s.SEXE === "FÉMININ" || s.SEXE === "FEMININ").length,
+    unspecifiedSexCount: 0, // Will be calculated
+    niveaux: { A: 0, B: 0, C: 0, D: 0, unspecified: 0 },
+    vigilance: { ROUGE: 0, ORANGE: 0, unspecified: 0 },
+    papCount: studentsInClass.filter(s => s.PAP && s.PAP.trim() !== "").length,
+    violatedRuleMessages: classViolationsForThisClass?.messages || [],
+  };
+  reportDetails.unspecifiedSexCount = reportDetails.studentCount - reportDetails.boysCount - reportDetails.girlsCount;
+
+  studentsInClass.forEach(s => {
+    const niv = s.NIVEAU?.toUpperCase();
+    if (niv === 'A') reportDetails.niveaux.A++;
+    else if (niv === 'B') reportDetails.niveaux.B++;
+    else if (niv === 'C') reportDetails.niveaux.C++;
+    else if (niv === 'D') reportDetails.niveaux.D++;
+    else reportDetails.niveaux.unspecified++;
+
+    const vig = s.CODE_VIGILANCE?.toUpperCase();
+    if (vig === 'ROUGE') reportDetails.vigilance.ROUGE++;
+    else if (vig === 'ORANGE') reportDetails.vigilance.ORANGE++;
+    else if (!vig || vig.trim() === "") reportDetails.vigilance.unspecified++;
+  });
+
+  // Scoring Logic
+  studentsInClass.forEach(student => {
+    if (student.AMA_NOM && student.AMA_PRENOM) {
+      const amaNomNorm = normalizeString(student.AMA_NOM);
+      const amaPrenomNorm = normalizeString(student.AMA_PRENOM);
+      const amaPartner = allStudentsInContext.find(s =>
+        normalizeString(s.NOM) === amaNomNorm &&
+        normalizeString(s.PRENOM) === amaPrenomNorm
+      );
+      if (amaPartner && studentsInClass.some(sInClass => getStudentKey(sInClass) === getStudentKey(amaPartner))) {
+        score += 50; // Positive score for AMA pair in the same class
+      }
+    }
+  });
+
+  score -= reportDetails.studentCount * 2; // Penalty for larger classes (helps balance size)
+
+  if (reportDetails.studentCount > 0 && (reportDetails.boysCount + reportDetails.girlsCount > 0) && (globalBoyRatio > 0 || globalGirlRatio > 0)) {
+    const currentClassTotalWithGender = reportDetails.boysCount + reportDetails.girlsCount;
+    const currentClassBoyRatio = reportDetails.boysCount / currentClassTotalWithGender;
+    const currentClassGirlRatio = reportDetails.girlsCount / currentClassTotalWithGender;
+
+    const boyDeviation = Math.abs(currentClassBoyRatio - globalBoyRatio);
+    const girlDeviation = Math.abs(currentClassGirlRatio - globalGirlRatio);
+
+    const genderFactor = currentClassTotalWithGender / reportDetails.studentCount; // Weight by proportion of students with specified gender
+    score -= (boyDeviation + girlDeviation) * 8.0 * genderFactor * reportDetails.studentCount;
+  }
+
+
+  Object.values(reportDetails.niveaux).forEach(count => {
+    if (count > 1) score -= (count - 1) * 3; // Penalize concentration of same level
+  });
+
+  score -= reportDetails.vigilance.ROUGE * 10;
+  score -= reportDetails.vigilance.ORANGE * 5;
+  score -= reportDetails.papCount * 4;
+  score -= (reportDetails.violatedRuleMessages.length * 100); // Heavy penalty for each rule violation
+
+  return {
+    className: classShell.name,
+    classId: classShell.id,
+    score: Math.round(score),
+    ...reportDetails
+  };
+}
+
+
+export default function PlacementPage({ params }: PlacementPageProps) {
   const { toast } = useToast();
-  const pageParams = React.use(paramsProp);
-  const { niveau } = pageParams;
+  const { niveau } = params;
   const targetLevelDisplay = useMemo(() => niveau.toUpperCase().replace(/-/g, ' '), [niveau]);
 
   const [allStudents, setAllStudents] = useState<Student[]>([]);
@@ -798,6 +895,9 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
   const [currentOverDroppableId, setCurrentOverDroppableId] = useState<UniqueIdentifier | null>(null);
 
   const { setNodeRef: setUnassignedDroppableRef } = useDroppable({ id: UNASSIGNED_CONTAINER_ID });
+
+  const [reportData, setReportData] = useState<ClassReportInfo[]>([]);
+  const [isReportDialogOpen, setReportDialogOpen] = useState(false);
 
 
   const sensors = useSensors(
@@ -1530,16 +1630,16 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
                 }).sort((a, b) => { // Maintain current visual order within the container for dndArrayMove
                     const indexA = prevStudents.findIndex(ps => getStudentKey(ps) === getStudentKey(a));
                     const indexB = prevStudents.findIndex(ps => getStudentKey(ps) === getStudentKey(b));
-                    return indexA - indexB; 
+                    return indexA - indexB;
                 });
 
 
                 const oldLocalIndex = studentsInContainer.findIndex(s => getStudentKey(s) === active.id);
                 let newLocalIndex = studentsInContainer.findIndex(s => getStudentKey(s) === over.id);
-                
+
                 if (oldLocalIndex !== -1 && newLocalIndex !== -1) {
                    const reorderedStudentsInContainer = dndArrayMove(studentsInContainer, oldLocalIndex, newLocalIndex);
-                   
+
                    // Reconstruct newStudentsState by replacing the students of the current container with the reordered ones
                    let tempStudentState = [...prevStudents];
                    const studentsFromOtherContainers = tempStudentState.filter(s => {
@@ -1892,7 +1992,7 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     if (student.SEXE && (student.SEXE === "MASCULIN" || student.SEXE === "FÉMININ" || student.SEXE === "FEMININ")) {
         const absoluteGenderDifference = Math.abs(projectedBoys - projectedGirls);
         if (absoluteGenderDifference > maxAllowedAbsoluteGenderDifference) {
-          return true; 
+          return true;
         }
     }
 
@@ -1994,13 +2094,13 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
 
       if (amaPartner) {
         if (studentsInCandidateClass.some(s => getStudentKey(s) === getStudentKey(amaPartner))) {
-          score += 200; 
+          score += 200;
         } else if (amaPartner.FUTURE_CLASSE && amaPartner.FUTURE_CLASSE.trim() !== "" && amaPartner.FUTURE_CLASSE !== candidateClass.name) {
-          score -= 150; 
-        } else if (amaPartner.FUTURE_CLASSE === candidateClass.name) { 
+          score -= 150;
+        } else if (amaPartner.FUTURE_CLASSE === candidateClass.name) {
            score += 200;
-        } else { 
-          score += 20; 
+        } else {
+          score += 20;
         }
       }
     }
@@ -2010,10 +2110,10 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
 
     // Proportional Gender Balance (Soft constraint)
     const projectedClassSize = studentsInCandidateClass.length + 1;
-    
+
     let currentBoysInClass = studentsInCandidateClass.filter(s => s.SEXE === "MASCULIN").length;
     let currentGirlsInClass = studentsInCandidateClass.filter(s => s.SEXE === "FÉMININ" || s.SEXE === "FEMININ").length;
-    
+
     let projectedBoysAfterAdd = currentBoysInClass;
     let projectedGirlsAfterAdd = currentGirlsInClass;
 
@@ -2022,13 +2122,14 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     } else if (student.SEXE === "FÉMININ" || student.SEXE === "FEMININ") {
       projectedGirlsAfterAdd++;
     }
-    
-    // Only apply gender balance scoring if the student has a specified gender
-    if (student.SEXE && (student.SEXE === "MASCULIN" || student.SEXE === "FÉMININ" || student.SEXE === "FEMININ")) {
-        const expectedBoysInClass = projectedClassSize * globalBoyRatio;
-        const expectedGirlsInClass = projectedClassSize * globalGirlRatio;
-        const boyDeviation = Math.abs(projectedBoysAfterAdd - expectedBoysInClass);
-        const girlDeviation = Math.abs(projectedGirlsAfterAdd - expectedGirlsInClass);
+
+    // Only apply gender balance scoring if the student has a specified gender and there's a defined global ratio
+    if (student.SEXE && (student.SEXE === "MASCULIN" || student.SEXE === "FÉMININ" || student.SEXE === "FEMININ") && (globalBoyRatio > 0 || globalGirlRatio > 0) && projectedClassSize > 0) {
+        const projectedBoyRatioInClass = projectedBoysAfterAdd / projectedClassSize;
+        const projectedGirlRatioInClass = projectedGirlsAfterAdd / projectedClassSize;
+
+        const boyDeviation = Math.abs(projectedBoyRatioInClass - globalBoyRatio);
+        const girlDeviation = Math.abs(projectedGirlRatioInClass - globalGirlRatio);
         score -= (boyDeviation + girlDeviation) * 8.0; // Penalty for deviation from global ratio
     }
 
@@ -2043,7 +2144,7 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     let numOrangeInClass = studentsInCandidateClass.filter(s => s.CODE_VIGILANCE === "ORANGE").length;
     if (student.CODE_VIGILANCE === "ROUGE") numRougeInClass++;
     if (student.CODE_VIGILANCE === "ORANGE") numOrangeInClass++;
-    score -= numRougeInClass * 10; 
+    score -= numRougeInClass * 10;
     score -= numOrangeInClass * 5;
 
     // PAP Balance
@@ -2058,14 +2159,13 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
   const handleAutomaticPlacement = async () => {
     setIsAutoPlacing(true);
     toast({ title: "Répartition en cours...", description: "Veuillez patienter, cela peut prendre un moment." });
-    
-    // Ensure students without a level are not processed
+
     const studentsToAssignInitial = allStudents.filter(
         (s) => s.CLASSE.toUpperCase().startsWith(sourceLevel) &&
                (!s.FUTURE_CLASSE || s.FUTURE_CLASSE.trim() === "") &&
-               (s.NIVEAU && s.NIVEAU.trim() !== "") // Crucial: only students with a level
+               (s.NIVEAU && s.NIVEAU.trim() !== "")
     );
-    
+
     const availableClasses = [...futureClasses];
 
     if (studentsToAssignInitial.length === 0) {
@@ -2080,7 +2180,7 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     }
 
     let workingStudentList = JSON.parse(JSON.stringify(allStudents)) as Student[];
-    
+
     const classCounts = new Map<string, number>();
     availableClasses.forEach(fc => {
       classCounts.set(fc.name, workingStudentList.filter(s => s.FUTURE_CLASSE === fc.name).length);
@@ -2094,8 +2194,7 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     const globalBoyRatio = totalStudentsWithGenderToAssign > 0 ? totalBoysToAssign / totalStudentsWithGenderToAssign : 0.5;
     const globalGirlRatio = totalStudentsWithGenderToAssign > 0 ? totalGirlsToAssign / totalStudentsWithGenderToAssign : 0.5;
 
-    // Calculate max allowed absolute gender difference for hard constraint
-    let calculatedMaxAllowedAbsoluteGenderDifference = 5; // Default
+    let calculatedMaxAllowedAbsoluteGenderDifference = 5;
     if (availableClasses.length > 0 && totalStudentsWithGenderToAssign > 0) {
         const globalGenderDifferenceUnsigned = Math.abs(totalBoysToAssign - totalGirlsToAssign);
         const naturalDifferencePerClass = Math.ceil(globalGenderDifferenceUnsigned / availableClasses.length);
@@ -2106,7 +2205,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     let studentsPlacedCount = 0;
     const studentsNotPlaced: Student[] = [];
 
-    // Prioritize students with AMA constraints if their partner is already placed
     const studentsToAssign = [...studentsToAssignInitial].sort((a, b) => {
         const aAmaPartnerKey = (a.AMA_NOM && a.AMA_PRENOM) ? `${normalizeString(a.AMA_NOM)}-${normalizeString(a.AMA_PRENOM)}` : null;
         const bAmaPartnerKey = (b.AMA_NOM && b.AMA_PRENOM) ? `${normalizeString(b.AMA_NOM)}-${normalizeString(b.AMA_PRENOM)}` : null;
@@ -2117,24 +2215,22 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
         const aAmaPartnerPlaced = aPartner && aPartner.FUTURE_CLASSE && aPartner.FUTURE_CLASSE.trim() !== "";
         const bAmaPartnerPlaced = bPartner && bPartner.FUTURE_CLASSE && bPartner.FUTURE_CLASSE.trim() !== "";
 
-        if (aAmaPartnerPlaced && !bAmaPartnerPlaced) return -1; // a comes first
-        if (!aAmaPartnerPlaced && bAmaPartnerPlaced) return 1;  // b comes first
-        
-        // Secondary sort: students with NIVEAU D, then C, B, A (less critical levels first)
+        if (aAmaPartnerPlaced && !bAmaPartnerPlaced) return -1;
+        if (!aAmaPartnerPlaced && bAmaPartnerPlaced) return 1;
+
         const niveauOrder: Record<string, number> = { D: 1, C: 2, B: 3, A: 4 };
         const aNiveauSort = niveauOrder[a.NIVEAU?.toUpperCase() || ""] || 5;
         const bNiveauSort = niveauOrder[b.NIVEAU?.toUpperCase() || ""] || 5;
         if (aNiveauSort !== bNiveauSort) return aNiveauSort - bNiveauSort;
-        
-        return 0; // Keep original order if AMA and NIVEAU are same priority
+
+        return 0;
     });
 
 
     for (const student of studentsToAssign) {
       const studentInWorkingListIndex = workingStudentList.findIndex(s => getStudentKey(s) === getStudentKey(student));
-      if (studentInWorkingListIndex === -1) continue; 
-      
-      // Skip if student somehow already got placed (e.g. as an AMA partner)
+      if (studentInWorkingListIndex === -1) continue;
+
       if (workingStudentList[studentInWorkingListIndex].FUTURE_CLASSE && workingStudentList[studentInWorkingListIndex].FUTURE_CLASSE.trim() !== "") {
           continue;
       }
@@ -2144,7 +2240,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
       let highestScore = -Infinity;
       let placedInThisIteration = false;
 
-      // Shuffle classes to introduce some randomness in tie-breaking
       const shuffledClasses = [...availableClasses].sort(() => Math.random() - 0.5);
 
       for (const candidateClass of shuffledClasses) {
@@ -2152,14 +2247,14 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
         const studentsCurrentlyInThisCandidateClass = workingStudentList.filter(s => s.FUTURE_CLASSE === candidateClass.name);
 
         if (violatesHardConstraints(
-            workingStudentList[studentInWorkingListIndex], 
-            candidateClass, 
-            studentsCurrentlyInThisCandidateClass, 
-            placementRules, 
+            workingStudentList[studentInWorkingListIndex],
+            candidateClass,
+            studentsCurrentlyInThisCandidateClass,
+            placementRules,
             currentClassCount,
-            calculatedMaxAllowedAbsoluteGenderDifference // Pass the calculated threshold
+            calculatedMaxAllowedAbsoluteGenderDifference
             )) {
-          continue; // Skip this class if hard constraints are violated
+          continue;
         }
 
         const score = calculatePlacementScore(
@@ -2167,9 +2262,9 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
             candidateClass,
             studentsCurrentlyInThisCandidateClass,
             placementRules,
-            workingStudentList, // Pass all students for AMA partner checks
-            globalBoyRatio,     // Pass global ratio
-            globalGirlRatio     // Pass global ratio
+            workingStudentList,
+            globalBoyRatio,
+            globalGirlRatio
         );
 
         if (score > highestScore) {
@@ -2184,37 +2279,34 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
         studentsPlacedCount++;
         placedInThisIteration = true;
 
-        // If this student had an AMA partner who is still unassigned, try to place them in the same class
         const amaNomNorm = normalizeString(student.AMA_NOM);
         const amaPrenomNorm = normalizeString(student.AMA_PRENOM);
         if (student.AMA_NOM && student.AMA_PRENOM) {
-            const partnerIndex = workingStudentList.findIndex(s => 
-                normalizeString(s.NOM) === amaNomNorm && 
+            const partnerIndex = workingStudentList.findIndex(s =>
+                normalizeString(s.NOM) === amaNomNorm &&
                 normalizeString(s.PRENOM) === amaPrenomNorm &&
-                (!s.FUTURE_CLASSE || s.FUTURE_CLASSE.trim() === "") // Partner is unassigned
+                (!s.FUTURE_CLASSE || s.FUTURE_CLASSE.trim() === "")
             );
             if (partnerIndex !== -1) {
                  const partner = workingStudentList[partnerIndex];
-                 const partnerCurrentClassCount = classCounts.get(bestCandidateClass.name) || 0; // Count after student was added
-                 const studentsInPartnersCandidateClass = workingStudentList.filter(s => s.FUTURE_CLASSE === bestCandidateClass!.name); // Students now in this class
+                 const partnerCurrentClassCount = classCounts.get(bestCandidateClass.name) || 0;
+                 const studentsInPartnersCandidateClass = workingStudentList.filter(s => s.FUTURE_CLASSE === bestCandidateClass!.name);
 
-                 // Check hard constraints for the partner
                  if (!violatesHardConstraints(
-                    partner, 
-                    bestCandidateClass, 
-                    studentsInPartnersCandidateClass, // Already includes the first student
-                    placementRules, 
-                    partnerCurrentClassCount, // This is the count *before* adding the partner
+                    partner,
+                    bestCandidateClass,
+                    studentsInPartnersCandidateClass,
+                    placementRules,
+                    partnerCurrentClassCount,
                     calculatedMaxAllowedAbsoluteGenderDifference
                     )) {
                     workingStudentList[partnerIndex].FUTURE_CLASSE = bestCandidateClass.name;
                     classCounts.set(bestCandidateClass.name, (classCounts.get(bestCandidateClass.name) || 0) + 1);
-                    // Note: We don't increment studentsPlacedCount here as the partner might be outside studentsToAssign initial list
                  }
             }
         }
       }
-      
+
       if (!placedInThisIteration) {
         studentsNotPlaced.push(student);
       }
@@ -2222,7 +2314,6 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
 
     setAllStudents(workingStudentList);
 
-    // Reorder students within each class after placement
     for (const fc of availableClasses) {
       handleReorderStudentsInClass(fc.name);
     }
@@ -2246,12 +2337,12 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
     if (upperNiveau === "D") return 4;
     return 5; // Unspecified or other
   };
-  
+
   const handleReorderStudentsInClass = (className: string) => {
     setAllStudents(prevStudents => {
       const studentsInTargetClass = prevStudents.filter(s => s.FUTURE_CLASSE === className);
       const otherStudents = prevStudents.filter(s => s.FUTURE_CLASSE !== className);
-  
+
       studentsInTargetClass.sort((a, b) => {
         const orderA = getNiveauSortOrder(a.NIVEAU);
         const orderB = getNiveauSortOrder(b.NIVEAU);
@@ -2264,9 +2355,46 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
         }
         return normalizeString(a.PRENOM).localeCompare(normalizeString(b.PRENOM));
       });
-      
+
       return [...otherStudents, ...studentsInTargetClass];
     });
+  };
+
+  const handleGenerateReport = () => {
+    if (futureClasses.length === 0) {
+      toast({ title: "Rapport", description: "Aucune classe future n'a été créée pour générer un rapport.", variant: "default" });
+      return;
+    }
+
+    const studentsInFutureClassesForThisLevel = allStudents.filter(s =>
+      futureClasses.some(fc => fc.name === s.FUTURE_CLASSE)
+    );
+
+    const totalBoysInScope = studentsInFutureClassesForThisLevel.filter(s => s.SEXE === "MASCULIN").length;
+    const totalGirlsInScope = studentsInFutureClassesForThisLevel.filter(s => s.SEXE === "FÉMININ" || s.SEXE === "FEMININ").length;
+    const totalStudentsWithGenderInScope = totalBoysInScope + totalGirlsInScope;
+
+    const reportGlobalBoyRatio = totalStudentsWithGenderInScope > 0 ? totalBoysInScope / totalStudentsWithGenderInScope : 0.5;
+    const reportGlobalGirlRatio = totalStudentsWithGenderInScope > 0 ? totalGirlsInScope / totalStudentsWithGenderInScope : 0.5;
+
+    const newReportData = futureClasses.map(fc => {
+      const studentsInThisClass = allStudents.filter(s => s.FUTURE_CLASSE === fc.name);
+      const violationForThisClass = classViolations[fc.id] || { hasViolation: false, messages: [] };
+      return calculateClassScoreAndDetails(
+        fc,
+        studentsInThisClass,
+        allStudents,
+        placementRules,
+        reportGlobalBoyRatio,
+        reportGlobalGirlRatio,
+        violationForThisClass
+      );
+    });
+
+    newReportData.sort((a, b) => b.score - a.score);
+
+    setReportData(newReportData);
+    setReportDialogOpen(true);
   };
 
 
@@ -2391,7 +2519,12 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
 
             <Button onClick={handleAutomaticPlacement} variant="outline" size="sm" disabled={isAutoPlacing || studentsToPlace.filter(s => s.NIVEAU && s.NIVEAU.trim() !== "").length === 0 || futureClasses.length === 0}>
                 <Wand2 className="mr-1 h-3 w-3 sm:mr-1.5 sm:h-4 sm:w-4"/>
-                {isAutoPlacing ? "Répartition..." : "Répartir Auto"}
+                {isAutoPlacing ? "Répartition..." : "Répartir"}
+            </Button>
+
+            <Button onClick={handleGenerateReport} variant="outline" size="sm">
+              <ScrollText className="mr-1 h-3 w-3 sm:mr-1.5 sm:h-4 sm:w-4"/>
+              Rapport
             </Button>
 
             <Dialog open={isManageRulesDialogOpen} onOpenChange={setManageRulesDialogOpen}>
@@ -3123,7 +3256,63 @@ export default function PlacementPage({ params: paramsProp }: PlacementPageProps
         </DialogContent>
       </Dialog>
 
-      {/* Delete Rule Confirmation Dialog is now part of the rule list mapping */}
+      {/* Report Dialog */}
+      <Dialog open={isReportDialogOpen} onOpenChange={setReportDialogOpen}>
+        <DialogContent className="max-w-3xl max-h-[90vh] flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Rapport de Placement pour {targetLevelDisplay}</DialogTitle>
+            <DialogDescription>
+              Scores et détails des classes actuellement configurées. Un score plus élevé indique une meilleure adéquation théorique.
+            </DialogDescription>
+          </DialogHeader>
+          <ScrollArea className="flex-1 pr-4">
+            <div className="space-y-4 py-2">
+              {reportData.length === 0 && <p className="text-muted-foreground text-center">Aucune donnée de rapport à afficher. Assurez-vous que des élèves sont placés.</p>}
+              {reportData.map((classInfo) => (
+                <Card key={classInfo.classId} className={classInfo.violatedRuleMessages.length > 0 ? "border-destructive bg-destructive/5" : ""}>
+                  <CardHeader className="pb-3 pt-4">
+                    <CardTitle className="flex justify-between items-center text-lg">
+                      <span>{classInfo.className}</span>
+                      <Badge variant={classInfo.violatedRuleMessages.length > 0 ? "destructive" : "secondary"}>
+                        Score: {classInfo.score}
+                      </Badge>
+                    </CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-sm space-y-1.5">
+                    <p><strong>Effectif :</strong> {classInfo.studentCount} (G: {classInfo.boysCount}, F: {classInfo.girlsCount}, N/S: {classInfo.unspecifiedSexCount})</p>
+                    <p>
+                      <strong>Niveaux :</strong>
+                      A: <span className="font-semibold text-green-700">{classInfo.niveaux.A}</span>, {' '}
+                      B: <span className="font-semibold text-green-500">{classInfo.niveaux.B}</span>, {' '}
+                      C: <span className="font-semibold text-yellow-500">{classInfo.niveaux.C}</span>, {' '}
+                      D: <span className="font-semibold text-red-500">{classInfo.niveaux.D}</span>, {' '}
+                      Non Spéc.: <span className="font-semibold">{classInfo.niveaux.unspecified}</span>
+                    </p>
+                    <p>
+                      <strong>Vigilance :</strong>
+                      Rouge: <span className="font-semibold text-red-600">{classInfo.vigilance.ROUGE}</span>, {' '}
+                      Orange: <span className="font-semibold text-orange-500">{classInfo.vigilance.ORANGE}</span>, {' '}
+                      Non Spéc.: <span className="font-semibold">{classInfo.vigilance.unspecified}</span>
+                    </p>
+                    <p><strong>PAP :</strong> <span className="font-semibold text-yellow-600">{classInfo.papCount}</span></p>
+                    {classInfo.violatedRuleMessages.length > 0 && (
+                      <div className="pt-1">
+                        <strong className="text-destructive">Violations de règles ({classInfo.violatedRuleMessages.length}) :</strong>
+                        <ul className="list-disc list-inside text-destructive pl-4 text-xs">
+                          {classInfo.violatedRuleMessages.map((msg, idx) => <li key={idx}>{msg}</li>)}
+                        </ul>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          </ScrollArea>
+          <DialogFooter className="border-t pt-4">
+            <Button variant="outline" onClick={() => setReportDialogOpen(false)}>Fermer</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
 
       <DragOverlay>
